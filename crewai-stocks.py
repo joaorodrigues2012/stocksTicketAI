@@ -13,32 +13,82 @@ from langchain_community.tools import DuckDuckGoSearchResults
 import streamlit as st
 
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import io
 import base64
 
 START_DATE = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
 END_DATE = datetime.now().strftime('%Y-%m-%d')
 
+def fetch_stock_info(ticket):
+    try:
+        stock = yf.Ticker(ticket)
+        info = stock.info
+
+        stock_data = {
+            "Abertura": info.get("open"),
+            "P/L": info.get("trailingPE"),
+            "Vol.": info.get("volume"),
+            "Alta": info.get("dayHigh"),
+            "Máx. de 52 sem.": info.get("fiftyTwoWeekHigh"),
+            "Vol. Médio": info.get("averageVolume"),
+            "Baixa": info.get("dayLow"),
+            "Mín. de 52 sem.": info.get("fiftyTwoWeekLow"),
+            "Cap. Merc.": info.get("marketCap"),
+            "Fechamento": info.get("previousClose")
+        }
+
+        return stock_data
+    except Exception as e:
+        return f"Error fetching stock info: {e}"
+
 def plot_stock_price(ticket):
     stock = fetch_stock_price(ticket)
-    if isinstance(stock, str):  # Erro ao buscar dados
+    if isinstance(stock, str):  # Verifica se houve um erro
         return stock
 
-    fig, ax = plt.subplots(figsize=(10, 5))
-    stock['Close'].plot(ax=ax, title=f"{ticket} Stock Price")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Price")
-    ax.grid(True)
+    # Calcula as médias móveis de 20 e 50 dias
+    stock['SMA20'] = stock['Close'].rolling(window=20).mean()
+    stock['SMA50'] = stock['Close'].rolling(window=50).mean()
 
-    # Salvar o gráfico em um buffer de memória e codificá-lo em base64
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    buf.seek(0)
-    img_str = base64.b64encode(buf.getvalue()).decode('utf-8')
-    buf.close()
+    fig, ax1 = plt.subplots(figsize=(12, 6))
+
+    # Gráfico do preço de fechamento e médias móveis
+    ax1.plot(stock.index, stock['Close'], label="Close Price", color='blue')
+    ax1.plot(stock.index, stock['SMA20'], label="20-Day SMA", color='orange')
+    ax1.plot(stock.index, stock['SMA50'], label="50-Day SMA", color='green')
+    ax1.set_xlabel("Date")
+    ax1.set_ylabel("Price")
+    ax1.set_title(f"{ticket} Stock Price and Moving Averages")
+    ax1.grid(True)
+    ax1.legend()
+
+    # Adicionar o volume de negociação
+    ax2 = ax1.twinx()
+    ax2.bar(stock.index, stock['Volume'], color='gray', alpha=0.3, label='Volume')
+    ax2.set_ylabel("Volume")
+    ax2.legend(loc='upper left')
+
+    # Formatação das datas no eixo x
+    ax1.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
+    ax1.xaxis.set_major_locator(mdates.MonthLocator())
+    fig.autofmt_xdate()
+
+    # Salvar o gráfico localmente
+    image_path = f'{ticket}_stock_plot.png'
+    plt.savefig(image_path)
     plt.close(fig)
 
-    return img_str
+    stock_info = fetch_stock_info(ticket)
+
+    abertura = stock['Open'].iloc[0]
+    fechamento = stock['Close'].iloc[-1]
+
+    # Calcula a valorização em Reais e porcentagem
+    stock_info["Valorização (R$)"] = fechamento - abertura
+    stock_info["Valorização (%)"] = ((fechamento - abertura) / abertura) * 100
+
+    return image_path, stock_info
 
 def fetch_stock_price(ticket):
     try:
@@ -152,13 +202,23 @@ if submit_button:
                 # Mostrar o gráfico
                 img_str = plot_stock_price(ticket)
                 if not img_str.startswith("Error"):
-                    st.image(f"data:image/png;base64,{img_str}", caption=f"{ticket} Stock Price")
+                    st.image(img_str, caption=f"{ticket} Stock Price", use_column_width=True)
                 else:
                     st.error(img_str)
 
-                # Exemplo de recomendação (isso deve ser baseado na análise)
-                recommendation = "BUY"  # Ou "SELL" ou "HOLD", baseado na análise do texto
-                st.write(f"Recommendation: {recommendation}")
+                st.subheader(f"Informações Adicionais de {ticket}")
+                st.write(f"Abertura: {stock_info['Abertura']}")
+                st.write(f"P/L: {stock_info['P/L']}")
+                st.write(f"Vol.: {stock_info['Vol.']}")
+                st.write(f"Alta: {stock_info['Alta']}")
+                st.write(f"Mín. de 52 sem.: {stock_info['Mín. de 52 sem.']}")
+                st.write(f"Máx. de 52 sem.: {stock_info['Máx. de 52 sem.']}")
+                st.write(f"Vol. Médio: {stock_info['Vol. Médio']}")
+                st.write(f"Baixa: {stock_info['Baixa']}")
+                st.write(f"Fechamento: {stock_info['Fechamento']}")
+                st.write(f"Valorização (R$): {stock_info['Valorização (R$)']:.2f}")
+                st.write(f"Valorização (%): {stock_info['Valorização (%)']:.2f}%")
+                st.write(f"Cap. Merc.: {stock_info['Cap. Merc.']}")
 
             else:
                 st.error('No results available for the selected ticket.')
