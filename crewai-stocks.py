@@ -200,9 +200,9 @@ if submit_button:
                 st.write(results['final_output'])
 
                 # Mostrar o gráfico
-                img_str = plot_stock_price(ticket)
+                img_str, stock_info = plot_stock_price(ticket)
                 if not img_str.startswith("Error"):
-                    st.image(img_str, caption=f"{ticket} Stock Price", use_column_width=True)
+                    st.image(img_str, caption=f"{ticket} Stock Price")
                 else:
                     st.error(img_str)
 
